@@ -221,21 +221,26 @@ class _MapPageState extends State<MapPage> {
                       point: stop.position,
                       width: 36,
                       height: 36,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
+                      child: GestureDetector(
+                        onTap: () => _showStopInfo(
+                          context,
+                          stop,
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
                           border: Border.all(
                             color:
                                 Colors.deepOrange,
                             width: 3,
                           ),
                         ),
-                        child: const Icon(
-                          Icons.location_on,
-                          color:
-                              Colors.deepOrange,
-                          size: 21,
+                          child: const Icon(
+                            Icons.location_on,
+                            color: Colors.deepOrange,
+                            size: 21,
+                          ),
                         ),
                       ),
                     ),
@@ -576,6 +581,67 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
+
+  void _showStopInfo(
+    BuildContext context,
+    TransitStop stop,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            24,
+            8,
+            24,
+            30,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.location_on,
+                    color: Colors.deepOrange,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      stop.name,
+                      style: const TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Text('Código da parada: ${stop.id}'),
+              const SizedBox(height: 8),
+              Text('Linha: ${selectedLine.name}'),
+              const SizedBox(height: 8),
+              Text('Sentido: ${selectedLine.direction}'),
+              const SizedBox(height: 8),
+              Text('Ordem na rota: ${stop.sequence}'),
+              const SizedBox(height: 18),
+              const Text(
+                'Dados simulados para desenvolvimento.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
   void _showBusInfo(
     BuildContext context,
     TransitBus bus,
@@ -668,5 +734,7 @@ class _MapPageState extends State<MapPage> {
     );
   }
 }
+
+
 
 
