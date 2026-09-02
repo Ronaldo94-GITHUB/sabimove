@@ -582,13 +582,56 @@ class _MapPageState extends State<MapPage> {
   }
 
 
+  int _etaToStop(
+    TransitBus bus,
+    TransitStop stop,
+  ) {
+    final targetProgress =
+        _stopProgress(stop.position);
+
+    double remainingProgress;
+
+    if (targetProgress > bus.progress) {
+      remainingProgress =
+          targetProgress - bus.progress;
+    } else {
+      remainingProgress =
+          (1 - bus.progress) +
+          targetProgress;
+    }
+
+    const simulatedRouteMinutes = 18.0;
+
+    final eta =
+        (remainingProgress * simulatedRouteMinutes)
+            .ceil();
+
+    return eta < 1 ? 1 : eta;
+  }
+
   void _showStopInfo(
     BuildContext context,
     TransitStop stop,
   ) {
+    final arrivingBuses = buses
+        .where(
+          (bus) => bus.lineId == selectedLine.id,
+        )
+        .map(
+          (bus) => MapEntry(
+            bus,
+            _etaToStop(bus, stop),
+          ),
+        )
+        .toList()
+      ..sort(
+        (a, b) => a.value.compareTo(b.value),
+      );
+
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (_) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(
@@ -599,7 +642,8 @@ class _MapPageState extends State<MapPage> {
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
@@ -614,23 +658,121 @@ class _MapPageState extends State<MapPage> {
                       stop.name,
                       style: const TextStyle(
                         fontSize: 21,
-                        fontWeight: FontWeight.bold,
+                        fontWeight:
+                            FontWeight.bold,
                       ),
                     ),
                   ),
                 ],
               ),
+
               const SizedBox(height: 18),
-              Text('Código da parada: ${stop.id}'),
+
+              Text(
+                'Código da parada: ${stop.id}',
+              ),
+
               const SizedBox(height: 8),
-              Text('Linha: ${selectedLine.name}'),
+
+              Text(
+                'Linha: ${selectedLine.name}',
+              ),
+
               const SizedBox(height: 8),
-              Text('Sentido: ${selectedLine.direction}'),
+
+              Text(
+                'Sentido: ${selectedLine.direction}',
+              ),
+
               const SizedBox(height: 8),
-              Text('Ordem na rota: ${stop.sequence}'),
-              const SizedBox(height: 18),
+
+              Text(
+                'Ordem na rota: ${stop.sequence}',
+              ),
+
+              const SizedBox(height: 22),
+
+              const Row(
+                children: [
+                  Icon(
+                    Icons.directions_bus,
+                    size: 21,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Próximos ônibus',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              ...arrivingBuses.map(
+                (entry) {
+                  final bus = entry.key;
+                  final eta = entry.value;
+
+                  return Container(
+                    margin: const EdgeInsets.only(
+                      bottom: 8,
+                    ),
+                    padding:
+                        const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue
+                          .withValues(alpha: 0.06),
+                      borderRadius:
+                          BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          child: Text(
+                            bus.vehicleNumber,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight:
+                                  FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Ônibus ${bus.vehicleNumber}',
+                            style: const TextStyle(
+                              fontWeight:
+                                  FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '$eta min',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight:
+                                FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 10),
+
               const Text(
-                'Dados simulados para desenvolvimento.',
+                'Tempos e posições simulados para desenvolvimento.',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey,
@@ -734,6 +876,7 @@ class _MapPageState extends State<MapPage> {
     );
   }
 }
+
 
 
 
