@@ -1,0 +1,161 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+void main() {
+  runApp(const SabiMoveApp());
+}
+
+class SabiMoveApp extends StatelessWidget {
+  const SabiMoveApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'SabiMove',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1565C0),
+        ),
+      ),
+      home: const HomePage(),
+    );
+  }
+}
+
+class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const Spacer(),
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1565C0),
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                child: const Icon(
+                  Icons.directions_bus_rounded,
+                  size: 70,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 28),
+              const Text(
+                'SabiMove',
+                style: TextStyle(
+                  fontSize: 42,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF172033),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'by Sabino AI',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1565C0),
+                ),
+              ),
+              const SizedBox(height: 28),
+              const Text(
+                'Mobilidade inteligente\nem tempo real.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 21,
+                  height: 1.4,
+                  color: Color(0xFF5B6475),
+                ),
+              ),
+              const Spacer(),
+              SizedBox(
+                width: double.infinity,
+                height: 58,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MapPage(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.map_rounded),
+                  label: const Text(
+                    'Ver ônibus no mapa',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Rotas • Pontos • Previsões',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF7A8495),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MapPage extends StatelessWidget {
+  const MapPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    const agudos = LatLng(-22.4694, -48.9875);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Mapa SabiMove'),
+      ),
+      body: FlutterMap(
+        options: const MapOptions(
+          initialCenter: agudos,
+          initialZoom: 14,
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'br.com.sabinoai.sabimove',
+          ),
+          MarkerLayer(
+            markers: const [
+              Marker(
+                point: agudos,
+                width: 60,
+                height: 60,
+                child: Icon(
+                  Icons.directions_bus,
+                  size: 42,
+                  color: Colors.blue,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
