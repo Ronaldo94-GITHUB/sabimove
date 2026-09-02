@@ -1,4 +1,4 @@
-﻿class TransitBus {
+class TransitBus {
   final String id;
   final String lineId;
   final String vehicleNumber;

@@ -1,4 +1,4 @@
-﻿import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../models/transit_line.dart';
 import '../models/transit_stop.dart';

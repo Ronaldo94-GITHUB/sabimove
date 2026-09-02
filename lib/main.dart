@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
+
 import 'pages/map_page.dart';
 
 void main() {
@@ -15,9 +16,7 @@ class SabiMoveApp extends StatelessWidget {
       title: 'SabiMove',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1565C0),
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
       ),
       home: const HomePage(),
     );
@@ -86,28 +85,20 @@ class HomePage extends StatelessWidget {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const MapPage(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const MapPage()),
                     );
                   },
                   icon: const Icon(Icons.map_rounded),
                   label: const Text(
                     'Ver Ã´nibus no mapa',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               const Text(
                 'Rotas â€¢ Pontos â€¢ PrevisÃµes',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF7A8495),
-                ),
+                style: TextStyle(fontSize: 14, color: Color(0xFF7A8495)),
               ),
               const SizedBox(height: 20),
             ],
@@ -117,5 +108,3 @@ class HomePage extends StatelessWidget {
     );
   }
 }
-
-

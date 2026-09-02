@@ -1,4 +1,4 @@
-﻿import '../models/transit_bus.dart';
+import '../models/transit_bus.dart';
 
 const mockBuses = <TransitBus>[
   TransitBus(
