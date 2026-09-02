@@ -1,11 +1,13 @@
 ﻿import 'package:latlong2/latlong.dart';
 
+import 'transit_stop.dart';
+
 class TransitLine {
   final String id;
   final String name;
   final String direction;
   final List<LatLng> routePoints;
-  final List<LatLng> stops;
+  final List<TransitStop> stops;
 
   const TransitLine({
     required this.id,

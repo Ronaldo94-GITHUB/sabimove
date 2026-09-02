@@ -8,6 +8,7 @@ import '../data/mock_buses.dart';
 import '../data/mock_lines.dart';
 import '../models/transit_bus.dart';
 import '../models/transit_line.dart';
+import '../models/transit_stop.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -126,11 +127,11 @@ class _MapPageState extends State<MapPage> {
     return closestIndex / (points.length - 1);
   }
 
-  LatLng _nextStopForBus(TransitBus bus) {
+  TransitStop _nextStopForBus(TransitBus bus) {
     final stops = selectedLine.stops;
 
     for (final stop in stops) {
-      final progress = _stopProgress(stop);
+      final progress = _stopProgress(stop.position);
 
       if (progress > bus.progress) {
         return stop;
@@ -143,7 +144,7 @@ class _MapPageState extends State<MapPage> {
   int _etaForBus(TransitBus bus) {
     final nextStop = _nextStopForBus(bus);
     final nextStopProgress =
-        _stopProgress(nextStop);
+        _stopProgress(nextStop.position);
 
     double remainingProgress;
 
@@ -217,7 +218,7 @@ class _MapPageState extends State<MapPage> {
                 markers: [
                   ...selectedLine.stops.map(
                     (stop) => Marker(
-                      point: stop,
+                      point: stop.position,
                       width: 36,
                       height: 36,
                       child: Container(
@@ -667,3 +668,5 @@ class _MapPageState extends State<MapPage> {
     );
   }
 }
+
+
