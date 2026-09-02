@@ -24,6 +24,48 @@ class _MapPageState extends State<MapPage> {
   Timer? movementTimer;
 
   final Set<String> favoriteStopIds = <String>{};
+  final Set<String> favoriteLineIds = <String>{};
+
+  int get favoriteCount =>
+      favoriteStopIds.length + favoriteLineIds.length;
+
+  bool _isLineFavorite(TransitLine line) {
+    return favoriteLineIds.contains(line.id);
+  }
+
+  void _toggleLineFavorite(TransitLine line) {
+    setState(() {
+      if (_isLineFavorite(line)) {
+        favoriteLineIds.remove(line.id);
+      } else {
+        favoriteLineIds.add(line.id);
+      }
+    });
+  }
+
+  TransitLine? _lineForStop(String stopId) {
+    for (final line in mockLines) {
+      for (final stop in line.stops) {
+        if (stop.id == stopId) {
+          return line;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  TransitStop? _stopById(String stopId) {
+    for (final line in mockLines) {
+      for (final stop in line.stops) {
+        if (stop.id == stopId) {
+          return stop;
+        }
+      }
+    }
+
+    return null;
+  }
 
   bool _isStopFavorite(
     TransitStop stop,
@@ -43,6 +85,247 @@ class _MapPageState extends State<MapPage> {
     });
   }
 
+  void _showFavorites(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) {
+        final favoriteLines = mockLines
+            .where(
+              (line) => favoriteLineIds.contains(line.id),
+            )
+            .toList();
+
+        final favoriteStops = favoriteStopIds
+            .map(_stopById)
+            .whereType<TransitStop>()
+            .toList();
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              24,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxHeight: 600,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.star,
+                        color: Colors.amber,
+                        size: 28,
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        'Meus favoritos',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '$favoriteCount favorito(s)',
+                    style: const TextStyle(
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  if (favoriteCount == 0)
+                    const Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.star_border,
+                              size: 54,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 12),
+                            Text(
+                              'Nenhum favorito ainda',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 6),
+                            Text(
+                              'Favorite linhas e paradas para encontrá-las rapidamente.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          if (favoriteLines.isNotEmpty) ...[
+                            const Text(
+                              'Linhas',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            ...favoriteLines.map(
+                              (line) => Card(
+                                child: ListTile(
+                                  leading: const CircleAvatar(
+                                    child: Icon(
+                                      Icons.directions_bus,
+                                    ),
+                                  ),
+                                  title: Text(line.name),
+                                  subtitle:
+                                      Text(line.direction),
+                                  trailing: IconButton(
+                                    tooltip:
+                                        'Remover dos favoritos',
+                                    icon: const Icon(
+                                      Icons.star,
+                                      color: Colors.amber,
+                                    ),
+                                    onPressed: () {
+                                      _toggleLineFavorite(
+                                        line,
+                                      );
+                                      Navigator.of(context)
+                                          .pop();
+                                      _showFavorites(context);
+                                    },
+                                  ),
+                                  onTap: () {
+                                    setState(() {
+                                      selectedLine = line;
+                                    });
+
+                                    Navigator.of(context).pop();
+                                  },
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+                          ],
+
+                          if (favoriteStops.isNotEmpty) ...[
+                            const Text(
+                              'Paradas',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            ...favoriteStops.map(
+                              (stop) {
+                                final line =
+                                    _lineForStop(stop.id);
+
+                                return Card(
+                                  child: ListTile(
+                                    leading:
+                                        const CircleAvatar(
+                                      child: Icon(
+                                        Icons.location_on,
+                                      ),
+                                    ),
+                                    title: Text(stop.name),
+                                    subtitle: Text(
+                                      line == null
+                                          ? stop.id
+                                          : '${line.name} • ${line.direction}',
+                                    ),
+                                    trailing: IconButton(
+                                      tooltip:
+                                          'Remover dos favoritos',
+                                      icon: const Icon(
+                                        Icons.star,
+                                        color: Colors.amber,
+                                      ),
+                                      onPressed: () {
+                                        _toggleStopFavorite(
+                                          stop,
+                                        );
+                                        Navigator.of(context)
+                                            .pop();
+                                        _showFavorites(
+                                          context,
+                                        );
+                                      },
+                                    ),
+                                    onTap: () {
+                                      if (line != null) {
+                                        setState(() {
+                                          selectedLine =
+                                              line;
+                                        });
+                                      }
+
+                                      Navigator.of(context)
+                                          .pop();
+
+                                      Future.microtask(() {
+                                        if (!context.mounted) {
+                                          return;
+                                        }
+
+                                        _showStopInfo(
+                                          context,
+                                          stop,
+                                        );
+                                      });
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 8),
+
+                  const Text(
+                    'Favoritos armazenados temporariamente nesta versão.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
   @override
   void initState() {
     super.initState();
@@ -209,6 +492,66 @@ class _MapPageState extends State<MapPage> {
             fontWeight: FontWeight.w600,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: _isLineFavorite(selectedLine)
+                ? 'Remover linha dos favoritos'
+                : 'Favoritar linha',
+            onPressed: () {
+              _toggleLineFavorite(selectedLine);
+            },
+            icon: Icon(
+              _isLineFavorite(selectedLine)
+                  ? Icons.star
+                  : Icons.star_border,
+              color: _isLineFavorite(selectedLine)
+                  ? Colors.amber
+                  : null,
+            ),
+          ),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                tooltip: 'Meus favoritos',
+                onPressed: () {
+                  _showFavorites(context);
+                },
+                icon: const Icon(
+                  Icons.bookmarks_outlined,
+                ),
+              ),
+              if (favoriteCount > 0)
+                Positioned(
+                  right: 5,
+                  top: 5,
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 17,
+                      minHeight: 17,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                    ),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$favoriteCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: Stack(
         children: [
@@ -914,6 +1257,8 @@ class _MapPageState extends State<MapPage> {
     );
   }
 }
+
+
 
 
 
