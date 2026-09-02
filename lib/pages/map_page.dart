@@ -23,6 +23,26 @@ class _MapPageState extends State<MapPage> {
   late List<TransitBus> buses;
   Timer? movementTimer;
 
+  final Set<String> favoriteStopIds = <String>{};
+
+  bool _isStopFavorite(
+    TransitStop stop,
+  ) {
+    return favoriteStopIds.contains(stop.id);
+  }
+
+  void _toggleStopFavorite(
+    TransitStop stop,
+  ) {
+    setState(() {
+      if (_isStopFavorite(stop)) {
+        favoriteStopIds.remove(stop.id);
+      } else {
+        favoriteStopIds.add(stop.id);
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -663,6 +683,24 @@ class _MapPageState extends State<MapPage> {
                       ),
                     ),
                   ),
+                  IconButton(
+                    tooltip: _isStopFavorite(stop)
+                        ? 'Remover dos favoritos'
+                        : 'Adicionar aos favoritos',
+                    onPressed: () {
+                      _toggleStopFavorite(stop);
+                      Navigator.of(context).pop();
+                      _showStopInfo(context, stop);
+                    },
+                    icon: Icon(
+                      _isStopFavorite(stop)
+                          ? Icons.star
+                          : Icons.star_border,
+                      color: _isStopFavorite(stop)
+                          ? Colors.amber
+                          : Colors.grey,
+                    ),
+                  ),
                 ],
               ),
 
@@ -876,6 +914,8 @@ class _MapPageState extends State<MapPage> {
     );
   }
 }
+
+
 
 
 
