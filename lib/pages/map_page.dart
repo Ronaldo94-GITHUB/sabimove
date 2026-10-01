@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/mock_buses.dart';
 import '../data/mock_lines.dart';
@@ -25,10 +26,56 @@ class _MapPageState extends State<MapPage> {
   late List<TransitBus> buses;
   Timer? movementTimer;
 
+  static const String _favoriteStopIdsKey = 'sabimove.favorite_stop_ids';
+
+  static const String _favoriteLineIdsKey = 'sabimove.favorite_line_ids';
+
   final Set<String> favoriteStopIds = <String>{};
   final Set<String> favoriteLineIds = <String>{};
 
   int get favoriteCount => favoriteStopIds.length + favoriteLineIds.length;
+
+  Future<void> _loadFavorites() async {
+    final preferences = await SharedPreferences.getInstance();
+
+    final storedLineIds =
+        preferences.getStringList(_favoriteLineIdsKey) ?? const <String>[];
+
+    final storedStopIds =
+        preferences.getStringList(_favoriteStopIdsKey) ?? const <String>[];
+
+    final validLineIds = mockLines.map((line) => line.id).toSet();
+
+    final validStopIds = mockLines
+        .expand((line) => line.stops)
+        .map((stop) => stop.id)
+        .toSet();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      favoriteLineIds
+        ..clear()
+        ..addAll(storedLineIds.where(validLineIds.contains));
+
+      favoriteStopIds
+        ..clear()
+        ..addAll(storedStopIds.where(validStopIds.contains));
+    });
+  }
+
+  Future<void> _saveFavorites() async {
+    final preferences = await SharedPreferences.getInstance();
+
+    final lineIds = favoriteLineIds.toList()..sort();
+    final stopIds = favoriteStopIds.toList()..sort();
+
+    await preferences.setStringList(_favoriteLineIdsKey, lineIds);
+
+    await preferences.setStringList(_favoriteStopIdsKey, stopIds);
+  }
 
   bool _isLineFavorite(TransitLine line) {
     return favoriteLineIds.contains(line.id);
@@ -42,6 +89,8 @@ class _MapPageState extends State<MapPage> {
         favoriteLineIds.add(line.id);
       }
     });
+
+    unawaited(_saveFavorites());
   }
 
   TransitLine? _lineForStop(String stopId) {
@@ -80,6 +129,8 @@ class _MapPageState extends State<MapPage> {
         favoriteStopIds.add(stop.id);
       }
     });
+
+    unawaited(_saveFavorites());
   }
 
   void _showFavorites(BuildContext context) {
@@ -312,6 +363,8 @@ class _MapPageState extends State<MapPage> {
     super.initState();
 
     buses = mockBuses.map((bus) => bus.copyWith()).toList();
+
+    unawaited(_loadFavorites());
 
     movementTimer = Timer.periodic(
       const Duration(seconds: 2),
