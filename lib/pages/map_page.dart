@@ -198,7 +198,7 @@ class _MapPageState extends State<MapPage> {
                             ),
                             SizedBox(height: 6),
                             Text(
-                              'Favorite linhas e paradas para encontrÃƒÂ¡-las rapidamente.',
+                              'Favorite linhas e paradas para encontrá-las rapidamente.',
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Colors.grey),
                             ),
@@ -276,7 +276,7 @@ class _MapPageState extends State<MapPage> {
                                   subtitle: Text(
                                     line == null
                                         ? stop.id
-                                        : '${line.name} Ã¢â‚¬Â¢ ${line.direction}',
+                                        : '${line.name} • ${line.direction}',
                                   ),
                                   trailing: IconButton(
                                     tooltip: 'Remover dos favoritos',
@@ -318,7 +318,7 @@ class _MapPageState extends State<MapPage> {
                   const SizedBox(height: 8),
 
                   const Text(
-                    'Favoritos armazenados temporariamente nesta versÃƒÂ£o.',
+                    'Favoritos armazenados neste dispositivo.',
                     style: TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 ],
@@ -490,325 +490,532 @@ class _MapPageState extends State<MapPage> {
     return stop.name;
   }
 
+  Widget _buildTransitMap(BuildContext context) {
+    const agudos = LatLng(-22.4694, -48.9875);
+    return FlutterMap(
+      options: const MapOptions(initialCenter: agudos, initialZoom: 14),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'br.com.sabinoai.sabimove',
+        ),
+        PolylineLayer(
+          polylines: [
+            Polyline(
+              points: selectedLine.routePoints,
+              strokeWidth: 6,
+              color: Colors.blue,
+            ),
+          ],
+        ),
+        MarkerLayer(
+          markers: [
+            ...selectedLine.stops.map(
+              (stop) => Marker(
+                point: stop.position,
+                width: 40,
+                height: 40,
+                child: GestureDetector(
+                  onTap: () => _showStopInfo(context, stop),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.deepOrange, width: 3),
+                      boxShadow: const [
+                        BoxShadow(blurRadius: 4, color: Colors.black26),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.location_on,
+                      color: Colors.deepOrange,
+                      size: 22,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            ...selectedBuses.map(
+              (bus) => Marker(
+                point: _positionFromProgress(bus),
+                width: 60,
+                height: 60,
+                child: GestureDetector(
+                  onTap: () => _showBusInfo(context, bus),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1565C0),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: const [
+                        BoxShadow(blurRadius: 6, color: Colors.black26),
+                      ],
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.directions_bus,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          Text(
+                            bus.vehicleNumber,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildArrivals({bool compact = false}) {
+    return Card(
+      elevation: compact ? 5 : 0,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: EdgeInsets.all(compact ? 14 : 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.schedule, size: 20, color: Color(0xFF1565C0)),
+                SizedBox(width: 8),
+                Text(
+                  'Próximas chegadas',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...selectedBuses.map((bus) {
+              final eta = _etaForBus(bus);
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1565C0),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        bus.vehicleNumber,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(_stopNameForBus(bus))),
+                    Text(
+                      '$eta min',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1565C0),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 6),
+            const Text(
+              'Estimativas simuladas para desenvolvimento.',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopSidebar(BuildContext context) {
+    return Container(
+      width: 350,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(right: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.directions_bus_rounded,
+                color: Color(0xFF1565C0),
+                size: 28,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  selectedLine.name,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: _isLineFavorite(selectedLine)
+                    ? 'Remover linha dos favoritos'
+                    : 'Favoritar linha',
+                onPressed: () => _toggleLineFavorite(selectedLine),
+                icon: Icon(
+                  _isLineFavorite(selectedLine)
+                      ? Icons.star
+                      : Icons.star_border,
+                  color: _isLineFavorite(selectedLine)
+                      ? Colors.amber
+                      : Colors.grey,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            selectedLine.direction,
+            style: const TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Simulação ativa',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${selectedBuses.length} ônibus',
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'LINHAS',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...mockLines.map((line) {
+            final selected = line.id == selectedLine.id;
+            return Card(
+              elevation: selected ? 2 : 0,
+              color: selected
+                  ? const Color(0xFF1565C0).withValues(alpha: 0.08)
+                  : null,
+              child: ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  backgroundColor: selected
+                      ? const Color(0xFF1565C0)
+                      : Colors.grey.shade200,
+                  child: Icon(
+                    Icons.directions_bus,
+                    size: 19,
+                    color: selected ? Colors.white : Colors.grey.shade700,
+                  ),
+                ),
+                title: Text(
+                  line.name,
+                  style: TextStyle(
+                    fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                  ),
+                ),
+                subtitle: Text(line.direction),
+                trailing: Icon(
+                  selected ? Icons.check_circle : Icons.chevron_right,
+                  color: selected ? const Color(0xFF1565C0) : Colors.grey,
+                ),
+                onTap: () => setState(() => selectedLine = line),
+              ),
+            );
+          }),
+          const SizedBox(height: 24),
+          const Text(
+            'PARADAS',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...selectedLine.stops.map(
+            (stop) => ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+              leading: const Icon(Icons.location_on, color: Colors.deepOrange),
+              title: Text(stop.name),
+              subtitle: Text('Parada ${stop.sequence} • ${stop.id}'),
+              trailing: Icon(
+                _isStopFavorite(stop) ? Icons.star : Icons.star_border,
+                color: _isStopFavorite(stop) ? Colors.amber : Colors.grey,
+              ),
+              onTap: () => _showStopInfo(context, stop),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 12),
+          _buildArrivals(),
+          const SizedBox(height: 16),
+          const Row(
+            children: [
+              Icon(Icons.info_outline, size: 16, color: Colors.grey),
+              SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'Dados simulados para desenvolvimento.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileMap(BuildContext context) {
+    return Stack(
+      children: [
+        _buildTransitMap(context),
+        Positioned(
+          top: 16,
+          left: 16,
+          right: 16,
+          child: Card(
+            elevation: 5,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.directions_bus_rounded,
+                        color: Color(0xFF1565C0),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<TransitLine>(
+                            value: selectedLine,
+                            isExpanded: true,
+                            items: mockLines.map((line) {
+                              return DropdownMenuItem<TransitLine>(
+                                value: line,
+                                child: Text('${line.name} - ${line.direction}'),
+                              );
+                            }).toList(),
+                            onChanged: (line) {
+                              if (line != null) {
+                                setState(() => selectedLine = line);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.route, size: 18, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${selectedLine.direction} • '
+                          '${selectedBuses.length} ônibus simulados',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'Simulação ativa',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 20,
+          child: _buildArrivals(compact: true),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFavoritesAction(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        IconButton(
+          tooltip: 'Meus favoritos',
+          onPressed: () => _showFavorites(context),
+          icon: const Icon(Icons.bookmarks_outlined),
+        ),
+        if (favoriteCount > 0)
+          Positioned(
+            right: 5,
+            top: 5,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                '$favoriteCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    const agudos = LatLng(-22.4694, -48.9875);
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Mapa SabiMove',
-          style: TextStyle(fontWeight: FontWeight.w600),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.directions_bus_rounded, size: 25),
+            SizedBox(width: 9),
+            Text('SabiMove', style: TextStyle(fontWeight: FontWeight.w700)),
+          ],
         ),
         actions: [
           IconButton(
             tooltip: 'Buscar linhas e paradas',
-            onPressed: () {
-              _openSearch(context);
-            },
+            onPressed: () => _openSearch(context),
             icon: const Icon(Icons.search),
           ),
           IconButton(
             tooltip: _isLineFavorite(selectedLine)
                 ? 'Remover linha dos favoritos'
                 : 'Favoritar linha',
-            onPressed: () {
-              _toggleLineFavorite(selectedLine);
-            },
+            onPressed: () => _toggleLineFavorite(selectedLine),
             icon: Icon(
               _isLineFavorite(selectedLine) ? Icons.star : Icons.star_border,
               color: _isLineFavorite(selectedLine) ? Colors.amber : null,
             ),
           ),
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                tooltip: 'Meus favoritos',
-                onPressed: () {
-                  _showFavorites(context);
-                },
-                icon: const Icon(Icons.bookmarks_outlined),
-              ),
-              if (favoriteCount > 0)
-                Positioned(
-                  right: 5,
-                  top: 5,
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      minWidth: 17,
-                      minHeight: 17,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '$favoriteCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(width: 4),
+          _buildFavoritesAction(context),
+          const SizedBox(width: 6),
         ],
       ),
-      body: Stack(
-        children: [
-          FlutterMap(
-            options: const MapOptions(initialCenter: agudos, initialZoom: 14),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isDesktop = constraints.maxWidth >= 900;
+          if (!isDesktop) {
+            return _buildMobileMap(context);
+          }
+          return Row(
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'br.com.sabinoai.sabimove',
-              ),
-              PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: selectedLine.routePoints,
-                    strokeWidth: 6,
-                    color: Colors.blue,
-                  ),
-                ],
-              ),
-              MarkerLayer(
-                markers: [
-                  ...selectedLine.stops.map(
-                    (stop) => Marker(
-                      point: stop.position,
-                      width: 36,
-                      height: 36,
-                      child: GestureDetector(
-                        onTap: () => _showStopInfo(context, stop),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.deepOrange,
-                              width: 3,
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.location_on,
-                            color: Colors.deepOrange,
-                            size: 21,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  ...selectedBuses.map(
-                    (bus) => Marker(
-                      point: _positionFromProgress(bus),
-                      width: 60,
-                      height: 60,
-                      child: GestureDetector(
-                        onTap: () => _showBusInfo(context, bus),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1565C0),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 3),
-                            boxShadow: const [
-                              BoxShadow(blurRadius: 6, color: Colors.black26),
-                            ],
-                          ),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.directions_bus,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                Text(
-                                  bus.vehicleNumber,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          Positioned(
-            top: 16,
-            left: 16,
-            right: 16,
-            child: Card(
-              elevation: 5,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
+              _buildDesktopSidebar(context),
+              Expanded(
+                child: Stack(
                   children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.directions_bus_rounded,
-                          color: Color(0xFF1565C0),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<TransitLine>(
-                              value: selectedLine,
-                              isExpanded: true,
-                              items: mockLines.map((line) {
-                                return DropdownMenuItem<TransitLine>(
-                                  value: line,
-                                  child: Text(
-                                    '${line.name} - ${line.direction}',
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (line) {
-                                if (line == null) {
-                                  return;
-                                }
-
-                                setState(() {
-                                  selectedLine = line;
-                                });
-                              },
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.route, size: 18, color: Colors.grey),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${selectedLine.direction} Ã¢â‚¬Â¢ '
-                            '${selectedBuses.length} ÃƒÂ´nibus simulados',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                        Container(
+                    _buildTransitMap(context),
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Card(
+                        elevation: 4,
+                        child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
+                            horizontal: 14,
+                            vertical: 10,
                           ),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade100,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'SimulaÃƒÂ§ÃƒÂ£o ativa',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 20,
-            child: Card(
-              elevation: 5,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.schedule,
-                          size: 20,
-                          color: Color(0xFF1565C0),
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'PrÃƒÂ³ximas chegadas',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    ...selectedBuses.map((bus) {
-                      final eta = _etaForBus(bus);
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              padding: const EdgeInsets.symmetric(vertical: 5),
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1565C0),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                bus.vehicleNumber,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(child: Text(_stopNameForBus(bus))),
-                            Text(
-                              '$eta min',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.route,
+                                size: 18,
                                 color: Color(0xFF1565C0),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Text(
+                                '${selectedLine.name} • '
+                                '${selectedBuses.length} ônibus simulados',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      );
-                    }),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Estimativas simuladas para desenvolvimento.',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -886,7 +1093,7 @@ class _MapPageState extends State<MapPage> {
 
               const SizedBox(height: 18),
 
-              Text('CÃƒÂ³digo da parada: ${stop.id}'),
+              Text('Código da parada: ${stop.id}'),
 
               const SizedBox(height: 8),
 
@@ -907,7 +1114,7 @@ class _MapPageState extends State<MapPage> {
                   Icon(Icons.directions_bus, size: 21),
                   SizedBox(width: 8),
                   Text(
-                    'PrÃƒÂ³ximos ÃƒÂ´nibus',
+                    'Próximos ônibus',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                   ),
                 ],
@@ -944,7 +1151,7 @@ class _MapPageState extends State<MapPage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Ãƒâ€nibus ${bus.vehicleNumber}',
+                          'Ônibus ${bus.vehicleNumber}',
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -963,7 +1170,7 @@ class _MapPageState extends State<MapPage> {
               const SizedBox(height: 10),
 
               const Text(
-                'Tempos e posiÃƒÂ§ÃƒÂµes simulados para desenvolvimento.',
+                'Tempos e posições simulados para desenvolvimento.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
@@ -995,18 +1202,18 @@ class _MapPageState extends State<MapPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              Text('Ãƒâ€nibus ${bus.vehicleNumber}'),
+              Text('Ônibus ${bus.vehicleNumber}'),
               const SizedBox(height: 10),
               Text(selectedLine.direction),
               const SizedBox(height: 10),
-              Text('PrÃƒÂ³xima parada: $nextStop'),
+              Text('Próxima parada: $nextStop'),
               const SizedBox(height: 6),
-              Text('PrevisÃƒÂ£o de chegada: $eta min'),
+              Text('Previsão de chegada: $eta min'),
               const SizedBox(height: 10),
-              const Text('Status: Em operaÃƒÂ§ÃƒÂ£o'),
+              const Text('Status: Em operação'),
               const SizedBox(height: 18),
               const Text(
-                'PosiÃƒÂ§ÃƒÂ£o e previsÃƒÂ£o atualizadas automaticamente.',
+                'Posição e previsão atualizadas automaticamente.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 4),

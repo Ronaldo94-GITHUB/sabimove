@@ -90,14 +90,14 @@ class HomePage extends StatelessWidget {
                   },
                   icon: const Icon(Icons.map_rounded),
                   label: const Text(
-                    'Ver Ã´nibus no mapa',
+                    'Ver ônibus no mapa',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               const Text(
-                'Rotas â€¢ Pontos â€¢ PrevisÃµes',
+                'Rotas • Pontos • Previsões',
                 style: TextStyle(fontSize: 14, color: Color(0xFF7A8495)),
               ),
               const SizedBox(height: 20),
