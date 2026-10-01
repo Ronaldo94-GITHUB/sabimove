@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,6 +26,11 @@ class _MapPageState extends State<MapPage> {
 
   late List<TransitBus> buses;
   Timer? movementTimer;
+
+  final MapController _mapController = MapController();
+  LatLng? _userPosition;
+  bool _isLocating = false;
+  String? _locationMessage;
 
   static const String _favoriteStopIdsKey = 'sabimove.favorite_stop_ids';
 
@@ -375,6 +381,7 @@ class _MapPageState extends State<MapPage> {
   @override
   void dispose() {
     movementTimer?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -490,9 +497,241 @@ class _MapPageState extends State<MapPage> {
     return stop.name;
   }
 
+  Future<void> _goToMyLocation() async {
+    if (_isLocating) {
+      return;
+    }
+
+    setState(() {
+      _isLocating = true;
+      _locationMessage = null;
+    });
+
+    try {
+      var permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _locationMessage = 'Permissão de localização não concedida.';
+        });
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _locationMessage = 'Localização bloqueada. Libere a permissão no navegador ou dispositivo.';
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final point = LatLng(position.latitude, position.longitude);
+
+      setState(() {
+        _userPosition = point;
+        _locationMessage = 'Localização encontrada.';
+      });
+
+      _mapController.move(point, 16);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Localização encontrada. Toque novamente no botão de localização para ver as paradas próximas.',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _locationMessage = 'Não foi possível obter sua localização. Verifique a permissão do navegador ou dispositivo.';
+      });
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_locationMessage!)));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLocating = false;
+        });
+      }
+    }
+  }
+
+  double _distanceToStop(TransitStop stop) {
+    final position = _userPosition;
+
+    if (position == null) {
+      return double.infinity;
+    }
+
+    return Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      stop.position.latitude,
+      stop.position.longitude,
+    );
+  }
+
+  String _formatDistance(double meters) {
+    if (meters < 1000) {
+      return '${meters.round()} m';
+    }
+
+    return '${(meters / 1000).toStringAsFixed(1).replaceAll('.', ',')} km';
+  }
+
+  List<TransitStop> get _nearbyStops {
+    if (_userPosition == null) {
+      return const <TransitStop>[];
+    }
+
+    final stops = mockLines.expand((line) => line.stops).toList()
+      ..sort((a, b) => _distanceToStop(a).compareTo(_distanceToStop(b)));
+
+    return stops.take(5).toList();
+  }
+
+  void _openNearbyStop(BuildContext context, TransitStop stop) {
+    final line = _lineForStop(stop.id);
+
+    if (line != null) {
+      setState(() {
+        selectedLine = line;
+      });
+    }
+
+    _mapController.move(stop.position, 16);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !context.mounted) {
+        return;
+      }
+
+      _showStopInfo(context, stop);
+    });
+  }
+
+  void _showNearbyStops(BuildContext context) {
+    if (_userPosition == null) {
+      return;
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Paradas perto de mim',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Ordenadas pela distância da localização informada pelo dispositivo.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 10),
+                ..._nearbyStops.map((stop) {
+                  final line = _lineForStop(stop.id);
+
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(child: Icon(Icons.near_me)),
+                    title: Text(stop.name),
+                    subtitle: Text(
+                      line == null
+                          ? _formatDistance(_distanceToStop(stop))
+                          : '${line.name} • ${_formatDistance(_distanceToStop(stop))}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+
+                      Future.microtask(() {
+                        if (context.mounted) {
+                          _openNearbyStop(context, stop);
+                        }
+                      });
+                    },
+                  );
+                }),
+                const SizedBox(height: 4),
+                const Text(
+                  'A localização do usuário pode ser real. As linhas, paradas, ônibus e previsões desta versão continuam sendo dados simulados do projeto.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLocationAction(BuildContext context) {
+    return IconButton(
+      tooltip: _userPosition == null
+          ? 'Minha localização'
+          : 'Paradas perto de mim',
+      onPressed: _isLocating
+          ? null
+          : () async {
+              if (_userPosition == null) {
+                await _goToMyLocation();
+                return;
+              }
+
+              _mapController.move(_userPosition!, 16);
+
+              if (context.mounted) {
+                _showNearbyStops(context);
+              }
+            },
+      icon: _isLocating
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(_userPosition == null ? Icons.my_location : Icons.near_me),
+    );
+  }
+
   Widget _buildTransitMap(BuildContext context) {
     const agudos = LatLng(-22.4694, -48.9875);
     return FlutterMap(
+      mapController: _mapController,
       options: const MapOptions(initialCenter: agudos, initialZoom: 14),
       children: [
         TileLayer(
@@ -535,6 +774,56 @@ class _MapPageState extends State<MapPage> {
                 ),
               ),
             ),
+            if (_userPosition != null)
+              Marker(
+                point: _userPosition!,
+                width: 70,
+                height: 70,
+                child: Semantics(
+                  label: 'Sua localização',
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1565C0),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 4),
+                          boxShadow: const [
+                            BoxShadow(blurRadius: 8, color: Colors.black26),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.my_location,
+                          color: Colors.white,
+                          size: 21,
+                        ),
+                      ),
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Você',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1565C0),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ...selectedBuses.map(
               (bus) => Marker(
                 point: _positionFromProgress(bus),
@@ -947,6 +1236,7 @@ class _MapPageState extends State<MapPage> {
           ],
         ),
         actions: [
+          _buildLocationAction(context),
           IconButton(
             tooltip: 'Buscar linhas e paradas',
             onPressed: () => _openSearch(context),
