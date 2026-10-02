@@ -49,3 +49,5 @@ app.*.map.json
 
 # Backups locais do desenvolvimento
 backups/
+
+devtools_options.yaml
