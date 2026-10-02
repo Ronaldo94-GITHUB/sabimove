@@ -7,15 +7,29 @@ import '../models/transit_line.dart';
 import '../models/transit_stop.dart';
 import '../models/trip_leg.dart';
 import '../models/trip_plan.dart';
+import '../models/trip_transfer.dart';
 
 class TripPlannerService {
   const TripPlannerService();
+
+  static const double maxTransferWalkMeters = 600;
+  static const double walkingSpeedMetersPerMinute = 75;
+  static const int transferBufferMinutes = 3;
 
   TripPlan? findPlan({
     required String originStopId,
     required String destinationStopId,
   }) {
-    return findDirectPlan(
+    final direct = findDirectPlan(
+      originStopId: originStopId,
+      destinationStopId: destinationStopId,
+    );
+
+    if (direct != null) {
+      return direct;
+    }
+
+    return _findOneTransferPlan(
       originStopId: originStopId,
       destinationStopId: destinationStopId,
     );
@@ -29,59 +43,120 @@ class TripPlannerService {
       return null;
     }
 
-    for (final line in mockLines) {
-      TransitStop? origin;
-      TransitStop? destination;
+    final line = _lineContainingStop(originStopId);
 
-      for (final stop in line.stops) {
-        if (stop.id == originStopId) {
-          origin = stop;
-        }
-        if (stop.id == destinationStopId) {
-          destination = stop;
-        }
-      }
+    if (line == null || !_lineContainsStop(line, destinationStopId)) {
+      return null;
+    }
 
-      if (origin == null || destination == null) {
+    final origin = _stopOnLine(line, originStopId);
+    final destination = _stopOnLine(line, destinationStopId);
+
+    if (origin == null || destination == null) {
+      return null;
+    }
+
+    final leg = _buildLeg(line: line, origin: origin, destination: destination);
+
+    if (leg == null) {
+      return null;
+    }
+
+    return TripPlan(legs: [leg], estimatedMinutes: leg.estimatedMinutes);
+  }
+
+  TripPlan? _findOneTransferPlan({
+    required String originStopId,
+    required String destinationStopId,
+  }) {
+    final firstLine = _lineContainingStop(originStopId);
+    final secondLine = _lineContainingStop(destinationStopId);
+
+    if (firstLine == null ||
+        secondLine == null ||
+        firstLine.id == secondLine.id) {
+      return null;
+    }
+
+    final origin = _stopOnLine(firstLine, originStopId);
+    final destination = _stopOnLine(secondLine, destinationStopId);
+
+    if (origin == null || destination == null) {
+      return null;
+    }
+
+    TripPlan? bestPlan;
+    double? bestTransferDistance;
+
+    for (final firstTransferStop in firstLine.stops) {
+      final firstLeg = _buildLeg(
+        line: firstLine,
+        origin: origin,
+        destination: firstTransferStop,
+      );
+
+      if (firstLeg == null) {
         continue;
       }
 
-      if (destination.sequence <= origin.sequence) {
-        return null;
-      }
+      for (final secondTransferStop in secondLine.stops) {
+        final secondLeg = _buildLeg(
+          line: secondLine,
+          origin: secondTransferStop,
+          destination: destination,
+        );
 
-      final stopsTraveled = destination.sequence - origin.sequence;
-      final routeSegment = _routeSegment(
-        line: line,
-        origin: origin,
-        destination: destination,
-      );
+        if (secondLeg == null) {
+          continue;
+        }
 
-      var estimatedMinutes = 1;
+        final walkingDistance = distanceMeters(
+          firstTransferStop.position,
+          secondTransferStop.position,
+        );
 
-      if (line.stops.length > 1) {
-        const simulatedFullRouteMinutes = 18.0;
-        final fraction = stopsTraveled / (line.stops.length - 1);
-        estimatedMinutes = (fraction * simulatedFullRouteMinutes).ceil();
+        if (walkingDistance > maxTransferWalkMeters) {
+          continue;
+        }
 
-        if (estimatedMinutes < 1) {
-          estimatedMinutes = 1;
+        var walkingMinutes = (walkingDistance / walkingSpeedMetersPerMinute)
+            .ceil();
+
+        if (walkingMinutes < 1) {
+          walkingMinutes = 1;
+        }
+
+        final transfer = TripTransfer(
+          fromStop: firstTransferStop,
+          toStop: secondTransferStop,
+          walkingDistanceMeters: walkingDistance,
+          walkingMinutes: walkingMinutes,
+          bufferMinutes: transferBufferMinutes,
+        );
+
+        final totalMinutes =
+            firstLeg.estimatedMinutes +
+            transfer.estimatedMinutes +
+            secondLeg.estimatedMinutes;
+
+        final candidate = TripPlan(
+          legs: [firstLeg, secondLeg],
+          transfers: [transfer],
+          estimatedMinutes: totalMinutes,
+        );
+
+        if (bestPlan == null ||
+            totalMinutes < bestPlan.estimatedMinutes ||
+            (totalMinutes == bestPlan.estimatedMinutes &&
+                (bestTransferDistance == null ||
+                    walkingDistance < bestTransferDistance))) {
+          bestPlan = candidate;
+          bestTransferDistance = walkingDistance;
         }
       }
-
-      final leg = TripLeg(
-        line: line,
-        origin: origin,
-        destination: destination,
-        routeSegment: routeSegment,
-        stopsTraveled: stopsTraveled,
-        estimatedMinutes: estimatedMinutes,
-      );
-
-      return TripPlan(legs: [leg], estimatedMinutes: estimatedMinutes);
     }
 
-    return null;
+    return bestPlan;
   }
 
   TransitStop nearestStopTo(LatLng position) {
@@ -128,6 +203,67 @@ class TripPlannerService {
 
   double _toRadians(double degrees) {
     return degrees * math.pi / 180;
+  }
+
+  TransitLine? _lineContainingStop(String stopId) {
+    for (final line in mockLines) {
+      if (_lineContainsStop(line, stopId)) {
+        return line;
+      }
+    }
+
+    return null;
+  }
+
+  bool _lineContainsStop(TransitLine line, String stopId) {
+    return line.stops.any((stop) => stop.id == stopId);
+  }
+
+  TransitStop? _stopOnLine(TransitLine line, String stopId) {
+    for (final stop in line.stops) {
+      if (stop.id == stopId) {
+        return stop;
+      }
+    }
+
+    return null;
+  }
+
+  TripLeg? _buildLeg({
+    required TransitLine line,
+    required TransitStop origin,
+    required TransitStop destination,
+  }) {
+    if (destination.sequence <= origin.sequence) {
+      return null;
+    }
+
+    final stopsTraveled = destination.sequence - origin.sequence;
+
+    var estimatedMinutes = 1;
+
+    if (line.stops.length > 1) {
+      const simulatedFullRouteMinutes = 18.0;
+      final fraction = stopsTraveled / (line.stops.length - 1);
+      estimatedMinutes = (fraction * simulatedFullRouteMinutes).ceil();
+
+      if (estimatedMinutes < 1) {
+        estimatedMinutes = 1;
+      }
+    }
+
+    return TripLeg(
+      line: line,
+      origin: origin,
+      destination: destination,
+      routeSegment: _routeSegment(
+        line: line,
+        origin: origin,
+        destination: destination,
+      ),
+      stopsTraveled: stopsTraveled,
+      estimatedMinutes: estimatedMinutes,
+    );
   }
 
   List<LatLng> _routeSegment({

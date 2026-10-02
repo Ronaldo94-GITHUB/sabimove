@@ -6,7 +6,9 @@ import 'package:latlong2/latlong.dart';
 import '../data/mock_lines.dart';
 import '../models/transit_line.dart';
 import '../models/transit_stop.dart';
+import '../models/trip_leg.dart';
 import '../models/trip_plan.dart';
+import '../models/trip_transfer.dart';
 import '../services/trip_planner_service.dart';
 
 class TripPlannerSelection {
@@ -26,6 +28,11 @@ class TripPlannerPage extends StatefulWidget {
 
 class _TripPlannerPageState extends State<TripPlannerPage> {
   static const LatLng _agudosCenter = LatLng(-22.4694, -48.9875);
+
+  static const List<Color> _legColors = <Color>[
+    Color(0xFF1565C0),
+    Color(0xFFFF6F00),
+  ];
 
   final TripPlannerService _planner = const TripPlannerService();
 
@@ -83,6 +90,21 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     }
 
     return '${(meters / 1000).toStringAsFixed(1).replaceAll('.', ',')} km';
+  }
+
+  Color _legColor(int index) {
+    return _legColors[index % _legColors.length];
+  }
+
+  LatLng _transferMidpoint(TripTransfer transfer) {
+    return LatLng(
+      (transfer.fromStop.position.latitude +
+              transfer.toStop.position.latitude) /
+          2,
+      (transfer.fromStop.position.longitude +
+              transfer.toStop.position.longitude) /
+          2,
+    );
   }
 
   void _applyUserPosition(LatLng position, {required bool updateState}) {
@@ -197,7 +219,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     setState(() {
       _plan = plan;
       _message = plan == null
-          ? 'Não há uma viagem direta nesse sentido usando os dados simulados atuais.'
+          ? 'Não encontrei uma rota direta nem uma rota com 1 baldeação usando as conexões simuladas atuais.'
           : null;
     });
   }
@@ -270,10 +292,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         ? _centerForPlan(plan)
         : userPosition ?? _agudosCenter;
 
+    final planLineIds =
+        plan?.legs.map((leg) => leg.line.id).toSet() ?? const <String>{};
+
     return FlutterMap(
       key: ValueKey(
         plan != null
-            ? '${plan.line.id}-${plan.origin.id}-${plan.destination.id}'
+            ? '${plan.legs.map((leg) => leg.line.id).join('-')}-${plan.origin.id}-${plan.destination.id}'
             : 'trip-planner-${userPosition?.latitude}-${userPosition?.longitude}-${_originStopId ?? 'empty'}',
       ),
       options: MapOptions(
@@ -290,9 +315,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             ...mockLines.map(
               (line) => Polyline(
                 points: line.routePoints,
-                strokeWidth: plan?.line.id == line.id ? 5 : 3,
-                color: plan?.line.id == line.id
-                    ? const Color(0xFF90CAF9)
+                strokeWidth: planLineIds.contains(line.id) ? 5 : 3,
+                color: planLineIds.contains(line.id)
+                    ? const Color(0xFFBBDEFB)
                     : Colors.grey.withValues(alpha: 0.45),
               ),
             ),
@@ -305,10 +330,23 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 color: Colors.green.shade700,
               ),
             if (plan != null)
-              Polyline(
-                points: plan.routeSegment,
-                strokeWidth: 8,
-                color: Colors.deepOrange,
+              ...plan.legs.asMap().entries.map(
+                (entry) => Polyline(
+                  points: entry.value.routeSegment,
+                  strokeWidth: 8,
+                  color: _legColor(entry.key),
+                ),
+              ),
+            if (plan != null)
+              ...plan.transfers.map(
+                (transfer) => Polyline(
+                  points: [
+                    transfer.fromStop.position,
+                    transfer.toStop.position,
+                  ],
+                  strokeWidth: 4,
+                  color: Colors.green.shade700,
+                ),
               ),
           ],
         ),
@@ -334,6 +372,19 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                   label: 'Embarque',
                   icon: Icons.trip_origin,
                   color: Colors.green.shade700,
+                ),
+              ),
+            if (plan != null)
+              ...plan.transfers.map(
+                (transfer) => Marker(
+                  point: _transferMidpoint(transfer),
+                  width: 88,
+                  height: 70,
+                  child: _mapMarker(
+                    label: 'Baldeação',
+                    icon: Icons.swap_horiz,
+                    color: Colors.amber.shade800,
+                  ),
                 ),
               ),
             if (plan != null)
@@ -454,7 +505,100 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     );
   }
 
+  Widget _buildLegCard(int index, TripLeg leg) {
+    final color = _legColor(index);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 15,
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  '${leg.line.name} • ${leg.line.direction}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '${leg.origin.name} → ${leg.destination.name}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '${leg.stopsTraveled} etapa(s) • ${leg.estimatedMinutes} min simulados',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransferCard(TripTransfer transfer) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.directions_walk, color: Colors.green),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Baldeação',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text('${transfer.fromStop.name} → ${transfer.toStop.name}'),
+                const SizedBox(height: 4),
+                Text(
+                  '${_formatDistance(transfer.walkingDistanceMeters)} • '
+                  '${transfer.walkingMinutes} min a pé + '
+                  '${transfer.bufferMinutes} min de integração',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPlanCard(TripPlan plan) {
+    final routeLabel = plan.legs.map((leg) => leg.line.name).join(' → ');
+
     return Card(
       elevation: 0,
       color: const Color(0xFF1565C0).withValues(alpha: 0.07),
@@ -463,22 +607,41 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.green),
-                SizedBox(width: 8),
-                Text(
-                  'Viagem encontrada',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                const Icon(Icons.check_circle, color: Colors.green),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Viagem encontrada',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: plan.isDirect
+                        ? Colors.green.shade100
+                        : Colors.amber.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    plan.isDirect
+                        ? 'Direta'
+                        : '${plan.transferCount} baldeação',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 14),
-            _infoRow(
-              icon: Icons.directions_bus,
-              label: 'Linha',
-              value: '${plan.line.name} • ${plan.line.direction}',
-            ),
+            _infoRow(icon: Icons.route, label: 'Rota', value: routeLabel),
             _infoRow(
               icon: Icons.login,
               label: 'Embarque',
@@ -496,19 +659,32 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 value: _formatDistance(_accessDistanceMeters!),
               ),
             _infoRow(
-              icon: Icons.pin_drop,
-              label: 'Trecho',
-              value: '${plan.stopsTraveled} etapa(s) entre paradas',
+              icon: Icons.sync_alt,
+              label: 'Baldeações',
+              value: '${plan.transferCount}',
             ),
             _infoRow(
               icon: Icons.schedule,
-              label: 'Tempo estimado',
+              label: 'Tempo total',
               value: '${plan.estimatedMinutes} min',
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'A rota e o tempo do ônibus são simulados para desenvolvimento.',
-              style: TextStyle(fontSize: 11, color: Colors.grey),
+            const SizedBox(height: 10),
+            ...plan.legs.asMap().entries.expand((entry) {
+              final index = entry.key;
+              final widgets = <Widget>[_buildLegCard(index, entry.value)];
+
+              if (index < plan.transfers.length) {
+                widgets.add(_buildTransferCard(plan.transfers[index]));
+              }
+
+              return widgets;
+            }),
+            const SizedBox(height: 4),
+            Text(
+              plan.isDirect
+                  ? 'A rota e o tempo do ônibus são simulados para desenvolvimento.'
+                  : 'A rota, os tempos e a conexão entre paradas próximas são simulados para desenvolvimento. A baldeação permite caminhada de até ${TripPlannerService.maxTransferWalkMeters.round()} m.',
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
             const SizedBox(height: 14),
             SizedBox(
@@ -518,7 +694,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                   Navigator.of(context).pop(TripPlannerSelection(plan: plan));
                 },
                 icon: const Icon(Icons.map),
-                label: const Text('Ver no mapa principal'),
+                label: const Text('Voltar ao mapa principal'),
               ),
             ),
           ],
@@ -632,13 +808,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           const Divider(),
           const SizedBox(height: 8),
           const Text(
-            'V1.1 • Origem inteligente',
+            'V1.2 • Baldeação entre linhas',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'A viagem continua direta nesta versão. Internamente, o plano agora é formado por trechos (legs), preparando a próxima evolução para baldeações entre linhas.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+          Text(
+            'O planejador prioriza viagens diretas e, quando necessário, procura uma rota com 1 baldeação entre paradas simuladas próximas, com caminhada de até ${TripPlannerService.maxTransferWalkMeters.round()} m.',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
       ),
@@ -665,7 +841,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           if (isDesktop) {
             return Row(
               children: [
-                SizedBox(width: 430, child: _buildPlannerPanel()),
+                SizedBox(width: 450, child: _buildPlannerPanel()),
                 const VerticalDivider(width: 1),
                 Expanded(child: _buildMap()),
               ],
@@ -676,7 +852,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             children: [
               Expanded(flex: 5, child: _buildMap()),
               const Divider(height: 1),
-              Expanded(flex: 7, child: _buildPlannerPanel()),
+              Expanded(flex: 8, child: _buildPlannerPanel()),
             ],
           );
         },
