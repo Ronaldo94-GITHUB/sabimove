@@ -13,6 +13,7 @@ import '../models/transit_line.dart';
 import '../models/transit_stop.dart';
 
 import 'search_page.dart';
+import 'trip_planner_page.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -1223,6 +1224,37 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
+  Future<void> _openTripPlanner(BuildContext context) async {
+    final selection = await Navigator.of(context).push<TripPlannerSelection>(
+      MaterialPageRoute(builder: (_) => const TripPlannerPage()),
+    );
+
+    if (!mounted || !context.mounted || selection == null) {
+      return;
+    }
+
+    final plan = selection.plan;
+    final center = LatLng(
+      (plan.origin.position.latitude + plan.destination.position.latitude) / 2,
+      (plan.origin.position.longitude + plan.destination.position.longitude) /
+          2,
+    );
+
+    setState(() {
+      selectedLine = plan.line;
+    });
+
+    _mapController.move(center, 15);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${plan.line.name}: ${plan.origin.name} → ${plan.destination.name} • ${plan.estimatedMinutes} min',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1236,6 +1268,11 @@ class _MapPageState extends State<MapPage> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Planejar viagem',
+            onPressed: () => _openTripPlanner(context),
+            icon: const Icon(Icons.alt_route),
+          ),
           _buildLocationAction(context),
           IconButton(
             tooltip: 'Buscar linhas e paradas',
