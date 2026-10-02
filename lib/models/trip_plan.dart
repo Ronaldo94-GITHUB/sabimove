@@ -45,6 +45,16 @@ class TripPlan {
     );
   }
 
+  String get signature {
+    final lineIds = legs.map((leg) => leg.line.id).join('>');
+
+    final transferIds = transfers
+        .map((transfer) => '${transfer.fromStop.id}>${transfer.toStop.id}')
+        .join('>');
+
+    return '$lineIds|${origin.id}|${destination.id}|$transferIds';
+  }
+
   List<LatLng> get routeSegment {
     return [for (final leg in legs) ...leg.routeSegment];
   }

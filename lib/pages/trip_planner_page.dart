@@ -1,16 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../data/mock_lines.dart';
+import '../models/saved_trip.dart';
 import '../models/transit_line.dart';
 import '../models/transit_stop.dart';
 import '../models/trip_leg.dart';
 import '../models/trip_plan.dart';
 import '../models/trip_preference.dart';
 import '../models/trip_transfer.dart';
+import '../services/trip_history_service.dart';
 import '../services/trip_planner_service.dart';
+import 'saved_trips_page.dart';
 
 class TripPlannerSelection {
   final TripPlan plan;
@@ -36,6 +41,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   ];
 
   final TripPlannerService _planner = const TripPlannerService();
+
+  final TripHistoryService _historyService = TripHistoryService();
 
   String? _originStopId;
   String? _destinationStopId;
@@ -256,6 +263,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           ? 'Não encontrei uma rota direta nem uma rota com 1 baldeação usando as conexões simuladas atuais.'
           : null;
     });
+
+    if (plans.isNotEmpty) {
+      unawaited(_recordHistory(plans.first));
+    }
   }
 
   void _changePreference(TripPreference preference) {
@@ -276,6 +287,106 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     setState(() {
       _plan = plan;
     });
+
+    unawaited(_recordHistory(plan));
+  }
+
+  Future<void> _recordHistory(TripPlan plan) async {
+    final originId = _originStopId;
+    final destinationId = _destinationStopId;
+
+    if (originId == null || destinationId == null) {
+      return;
+    }
+
+    await _historyService.recordTrip(
+      originStopId: originId,
+      destinationStopId: destinationId,
+      preference: _preference,
+      planSignature: plan.signature,
+    );
+  }
+
+  Future<void> _saveFavorite(TripPlan plan) async {
+    final originId = _originStopId;
+    final destinationId = _destinationStopId;
+
+    if (originId == null || destinationId == null) {
+      return;
+    }
+
+    await _historyService.saveFavorite(
+      originStopId: originId,
+      destinationStopId: destinationId,
+      preference: _preference,
+      planSignature: plan.signature,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Rota salva nos favoritos.')));
+  }
+
+  Future<void> _openSavedTrips() async {
+    final saved = await Navigator.of(context).push<SavedTrip>(
+      MaterialPageRoute(builder: (_) => const SavedTripsPage()),
+    );
+
+    if (!mounted || saved == null) {
+      return;
+    }
+
+    _restoreSavedTrip(saved);
+  }
+
+  void _restoreSavedTrip(SavedTrip saved) {
+    final plans = _planner.findPlans(
+      originStopId: saved.originStopId,
+      destinationStopId: saved.destinationStopId,
+      preference: saved.preference,
+      maxResults: 3,
+    );
+
+    if (plans.isEmpty) {
+      setState(() {
+        _originStopId = saved.originStopId;
+        _destinationStopId = saved.destinationStopId;
+        _preference = saved.preference;
+        _usingMyLocationAsOrigin = false;
+        _accessDistanceMeters = null;
+        _clearPlans();
+        _message =
+            'A rota salva não está disponível nos dados simulados atuais.';
+      });
+      return;
+    }
+
+    TripPlan selectedPlan = plans.first;
+
+    for (final plan in plans) {
+      if (plan.signature == saved.planSignature) {
+        selectedPlan = plan;
+        break;
+      }
+    }
+
+    setState(() {
+      _originStopId = saved.originStopId;
+      _destinationStopId = saved.destinationStopId;
+      _preference = saved.preference;
+      _usingMyLocationAsOrigin = false;
+      _accessDistanceMeters = null;
+      _locationMessage = null;
+      _plans = plans;
+      _plan = selectedPlan;
+      _message = selectedPlan.signature == saved.planSignature
+          ? 'Viagem restaurada de Minhas viagens.'
+          : 'A alternativa original mudou; carreguei a opção disponível mais próxima.';
+    });
   }
 
   void _swapStops() {
@@ -295,16 +406,6 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       (plan.origin.position.longitude + plan.destination.position.longitude) /
           2,
     );
-  }
-
-  String _planKey(TripPlan plan) {
-    final lines = plan.legs.map((leg) => leg.line.id).join('-');
-
-    final transfers = plan.transfers
-        .map((transfer) => '${transfer.fromStop.id}-${transfer.toStop.id}')
-        .join('-');
-
-    return '$lines-${plan.origin.id}-${plan.destination.id}-$transfers';
   }
 
   Widget _mapMarker({
@@ -362,7 +463,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     return FlutterMap(
       key: ValueKey(
         plan != null
-            ? _planKey(plan)
+            ? plan.signature
             : 'trip-planner-${userPosition?.latitude}-${userPosition?.longitude}-${_originStopId ?? 'empty'}',
       ),
       options: MapOptions(
@@ -891,6 +992,17 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  _saveFavorite(plan);
+                },
+                icon: const Icon(Icons.star_border),
+                label: const Text('Salvar rota favorita'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
               child: FilledButton.icon(
                 onPressed: () {
                   Navigator.of(context).pop(TripPlannerSelection(plan: plan));
@@ -1016,13 +1128,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           const Divider(),
           const SizedBox(height: 8),
           const Text(
-            'V1.3 • Rotas inteligentes',
+            'V1.4 • Minhas viagens',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
-          Text(
-            'O planejador compara até 3 alternativas simuladas e permite priorizar menor tempo, menor caminhada ou menos baldeações. As viagens continuam limitadas a rota direta ou 1 baldeação.',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          const Text(
+            'O histórico registra rotas planejadas localmente. Você pode favoritar uma rota, abrir Minhas viagens e restaurar origem, destino, prioridade e alternativa selecionada.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
       ),
@@ -1041,6 +1153,14 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             Text('Planejador de viagem'),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Minhas viagens',
+            onPressed: _openSavedTrips,
+            icon: const Icon(Icons.history),
+          ),
+          const SizedBox(width: 6),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
