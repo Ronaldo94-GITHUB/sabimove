@@ -7,6 +7,7 @@ import '../models/transit_line.dart';
 import '../models/transit_stop.dart';
 import '../models/trip_leg.dart';
 import '../models/trip_plan.dart';
+import '../models/trip_preference.dart';
 import '../models/trip_transfer.dart';
 
 class TripPlannerService {
@@ -19,20 +20,53 @@ class TripPlannerService {
   TripPlan? findPlan({
     required String originStopId,
     required String destinationStopId,
+    TripPreference preference = TripPreference.fastest,
   }) {
+    final plans = findPlans(
+      originStopId: originStopId,
+      destinationStopId: destinationStopId,
+      preference: preference,
+      maxResults: 1,
+    );
+
+    return plans.isEmpty ? null : plans.first;
+  }
+
+  List<TripPlan> findPlans({
+    required String originStopId,
+    required String destinationStopId,
+    TripPreference preference = TripPreference.fastest,
+    int maxResults = 3,
+  }) {
+    if (originStopId == destinationStopId || maxResults <= 0) {
+      return const <TripPlan>[];
+    }
+
+    final candidates = <TripPlan>[];
+
     final direct = findDirectPlan(
       originStopId: originStopId,
       destinationStopId: destinationStopId,
     );
 
     if (direct != null) {
-      return direct;
+      candidates.add(direct);
+    } else {
+      candidates.addAll(
+        _findOneTransferPlans(
+          originStopId: originStopId,
+          destinationStopId: destinationStopId,
+        ),
+      );
     }
 
-    return _findOneTransferPlan(
-      originStopId: originStopId,
-      destinationStopId: destinationStopId,
-    );
+    candidates.sort((a, b) => _comparePlans(a, b, preference));
+
+    if (candidates.length <= maxResults) {
+      return candidates;
+    }
+
+    return candidates.take(maxResults).toList();
   }
 
   TripPlan? findDirectPlan({
@@ -65,7 +99,7 @@ class TripPlannerService {
     return TripPlan(legs: [leg], estimatedMinutes: leg.estimatedMinutes);
   }
 
-  TripPlan? _findOneTransferPlan({
+  List<TripPlan> _findOneTransferPlans({
     required String originStopId,
     required String destinationStopId,
   }) {
@@ -75,18 +109,17 @@ class TripPlannerService {
     if (firstLine == null ||
         secondLine == null ||
         firstLine.id == secondLine.id) {
-      return null;
+      return const <TripPlan>[];
     }
 
     final origin = _stopOnLine(firstLine, originStopId);
     final destination = _stopOnLine(secondLine, destinationStopId);
 
     if (origin == null || destination == null) {
-      return null;
+      return const <TripPlan>[];
     }
 
-    TripPlan? bestPlan;
-    double? bestTransferDistance;
+    final candidates = <TripPlan>[];
 
     for (final firstTransferStop in firstLine.stops) {
       final firstLeg = _buildLeg(
@@ -139,24 +172,82 @@ class TripPlannerService {
             transfer.estimatedMinutes +
             secondLeg.estimatedMinutes;
 
-        final candidate = TripPlan(
-          legs: [firstLeg, secondLeg],
-          transfers: [transfer],
-          estimatedMinutes: totalMinutes,
+        candidates.add(
+          TripPlan(
+            legs: [firstLeg, secondLeg],
+            transfers: [transfer],
+            estimatedMinutes: totalMinutes,
+          ),
         );
-
-        if (bestPlan == null ||
-            totalMinutes < bestPlan.estimatedMinutes ||
-            (totalMinutes == bestPlan.estimatedMinutes &&
-                (bestTransferDistance == null ||
-                    walkingDistance < bestTransferDistance))) {
-          bestPlan = candidate;
-          bestTransferDistance = walkingDistance;
-        }
       }
     }
 
-    return bestPlan;
+    return candidates;
+  }
+
+  int _comparePlans(TripPlan a, TripPlan b, TripPreference preference) {
+    switch (preference) {
+      case TripPreference.fastest:
+        return _compareFastest(a, b);
+      case TripPreference.lessWalking:
+        return _compareLessWalking(a, b);
+      case TripPreference.fewerTransfers:
+        return _compareFewerTransfers(a, b);
+    }
+  }
+
+  int _compareFastest(TripPlan a, TripPlan b) {
+    final timeComparison = a.estimatedMinutes.compareTo(b.estimatedMinutes);
+
+    if (timeComparison != 0) {
+      return timeComparison;
+    }
+
+    final walkingComparison = a.transferWalkingDistanceMeters.compareTo(
+      b.transferWalkingDistanceMeters,
+    );
+
+    if (walkingComparison != 0) {
+      return walkingComparison;
+    }
+
+    return a.transferCount.compareTo(b.transferCount);
+  }
+
+  int _compareLessWalking(TripPlan a, TripPlan b) {
+    final walkingComparison = a.transferWalkingDistanceMeters.compareTo(
+      b.transferWalkingDistanceMeters,
+    );
+
+    if (walkingComparison != 0) {
+      return walkingComparison;
+    }
+
+    final timeComparison = a.estimatedMinutes.compareTo(b.estimatedMinutes);
+
+    if (timeComparison != 0) {
+      return timeComparison;
+    }
+
+    return a.transferCount.compareTo(b.transferCount);
+  }
+
+  int _compareFewerTransfers(TripPlan a, TripPlan b) {
+    final transferComparison = a.transferCount.compareTo(b.transferCount);
+
+    if (transferComparison != 0) {
+      return transferComparison;
+    }
+
+    final timeComparison = a.estimatedMinutes.compareTo(b.estimatedMinutes);
+
+    if (timeComparison != 0) {
+      return timeComparison;
+    }
+
+    return a.transferWalkingDistanceMeters.compareTo(
+      b.transferWalkingDistanceMeters,
+    );
   }
 
   TransitStop nearestStopTo(LatLng position) {
@@ -245,6 +336,7 @@ class TripPlannerService {
     if (line.stops.length > 1) {
       const simulatedFullRouteMinutes = 18.0;
       final fraction = stopsTraveled / (line.stops.length - 1);
+
       estimatedMinutes = (fraction * simulatedFullRouteMinutes).ceil();
 
       if (estimatedMinutes < 1) {

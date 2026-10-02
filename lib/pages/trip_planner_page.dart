@@ -8,6 +8,7 @@ import '../models/transit_line.dart';
 import '../models/transit_stop.dart';
 import '../models/trip_leg.dart';
 import '../models/trip_plan.dart';
+import '../models/trip_preference.dart';
 import '../models/trip_transfer.dart';
 import '../services/trip_planner_service.dart';
 
@@ -39,6 +40,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   String? _originStopId;
   String? _destinationStopId;
   TripPlan? _plan;
+  List<TripPlan> _plans = <TripPlan>[];
+  TripPreference _preference = TripPreference.fastest;
   String? _message;
   String? _locationMessage;
 
@@ -92,6 +95,28 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     return '${(meters / 1000).toStringAsFixed(1).replaceAll('.', ',')} km';
   }
 
+  String _preferenceLabel(TripPreference preference) {
+    switch (preference) {
+      case TripPreference.fastest:
+        return 'Mais rápida';
+      case TripPreference.lessWalking:
+        return 'Menos caminhada';
+      case TripPreference.fewerTransfers:
+        return 'Menos baldeações';
+    }
+  }
+
+  IconData _preferenceIcon(TripPreference preference) {
+    switch (preference) {
+      case TripPreference.fastest:
+        return Icons.bolt;
+      case TripPreference.lessWalking:
+        return Icons.directions_walk;
+      case TripPreference.fewerTransfers:
+        return Icons.sync_alt;
+    }
+  }
+
   Color _legColor(int index) {
     return _legColors[index % _legColors.length];
   }
@@ -107,8 +132,15 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     );
   }
 
+  void _clearPlans() {
+    _plan = null;
+    _plans = <TripPlan>[];
+    _message = null;
+  }
+
   void _applyUserPosition(LatLng position, {required bool updateState}) {
     final nearestStop = _planner.nearestStopTo(position);
+
     final distance = _planner.distanceMeters(position, nearestStop.position);
 
     void apply() {
@@ -116,8 +148,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       _originStopId = nearestStop.id;
       _accessDistanceMeters = distance;
       _usingMyLocationAsOrigin = true;
-      _plan = null;
-      _message = null;
+      _clearPlans();
       _locationMessage =
           'Parada mais próxima: ${nearestStop.name} • ${_formatDistance(distance)}.';
     }
@@ -205,22 +236,45 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
     if (originId == null || destinationId == null) {
       setState(() {
-        _plan = null;
+        _clearPlans();
         _message = 'Selecione a origem e o destino.';
       });
       return;
     }
 
-    final plan = _planner.findPlan(
+    final plans = _planner.findPlans(
       originStopId: originId,
       destinationStopId: destinationId,
+      preference: _preference,
+      maxResults: 3,
     );
 
     setState(() {
-      _plan = plan;
-      _message = plan == null
+      _plans = plans;
+      _plan = plans.isEmpty ? null : plans.first;
+      _message = plans.isEmpty
           ? 'Não encontrei uma rota direta nem uma rota com 1 baldeação usando as conexões simuladas atuais.'
           : null;
+    });
+  }
+
+  void _changePreference(TripPreference preference) {
+    if (_preference == preference) {
+      return;
+    }
+
+    setState(() {
+      _preference = preference;
+    });
+
+    if (_originStopId != null && _destinationStopId != null) {
+      _planTrip();
+    }
+  }
+
+  void _selectPlan(TripPlan plan) {
+    setState(() {
+      _plan = plan;
     });
   }
 
@@ -229,8 +283,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       final previousOrigin = _originStopId;
       _originStopId = _destinationStopId;
       _destinationStopId = previousOrigin;
-      _plan = null;
-      _message = null;
+      _clearPlans();
       _usingMyLocationAsOrigin = false;
       _accessDistanceMeters = null;
     });
@@ -242,6 +295,16 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       (plan.origin.position.longitude + plan.destination.position.longitude) /
           2,
     );
+  }
+
+  String _planKey(TripPlan plan) {
+    final lines = plan.legs.map((leg) => leg.line.id).join('-');
+
+    final transfers = plan.transfers
+        .map((transfer) => '${transfer.fromStop.id}-${transfer.toStop.id}')
+        .join('-');
+
+    return '$lines-${plan.origin.id}-${plan.destination.id}-$transfers';
   }
 
   Widget _mapMarker({
@@ -286,6 +349,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   Widget _buildMap() {
     final plan = _plan;
     final userPosition = _userPosition;
+
     final originStop = _originStopId == null ? null : _stopById(_originStopId!);
 
     final center = plan != null
@@ -298,7 +362,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     return FlutterMap(
       key: ValueKey(
         plan != null
-            ? '${plan.legs.map((leg) => leg.line.id).join('-')}-${plan.origin.id}-${plan.destination.id}'
+            ? _planKey(plan)
             : 'trip-planner-${userPosition?.latitude}-${userPosition?.longitude}-${_originStopId ?? 'empty'}',
       ),
       options: MapOptions(
@@ -434,8 +498,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         onChanged(newValue);
 
         setState(() {
-          _plan = null;
-          _message = null;
+          _clearPlans();
         });
       },
     );
@@ -499,6 +562,134 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 style: TextStyle(fontSize: 10, color: Colors.grey),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreferenceSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Prioridade do planejamento',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: TripPreference.values
+              .map(
+                (preference) => ChoiceChip(
+                  selected: _preference == preference,
+                  avatar: Icon(_preferenceIcon(preference), size: 17),
+                  label: Text(_preferenceLabel(preference)),
+                  onSelected: (_) {
+                    _changePreference(preference);
+                  },
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAlternativeSelector() {
+    if (_plans.length <= 1) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      elevation: 0,
+      color: Colors.grey.withValues(alpha: 0.06),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_plans.length} alternativas encontradas',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Ordenadas por: ${_preferenceLabel(_preference)}.',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 10),
+            ..._plans.asMap().entries.map((entry) {
+              final index = entry.key;
+              final plan = entry.value;
+              final selected = identical(_plan, plan);
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _selectPlan(plan),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF1565C0)
+                            : Colors.grey.withValues(alpha: 0.3),
+                        width: selected ? 2 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 15,
+                          child: Text(
+                            '${index + 1}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                plan.legs
+                                    .map((leg) => leg.line.name)
+                                    .join(' → '),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${plan.estimatedMinutes} min • '
+                                '${_formatDistance(plan.transferWalkingDistanceMeters)} a pé • '
+                                '${plan.transferCount} baldeação(ões)',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (selected)
+                          const Icon(
+                            Icons.check_circle,
+                            color: Color(0xFF1565C0),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -613,7 +804,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'Viagem encontrada',
+                    'Viagem selecionada',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -641,6 +832,11 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               ],
             ),
             const SizedBox(height: 14),
+            _infoRow(
+              icon: Icons.tune,
+              label: 'Prioridade',
+              value: _preferenceLabel(_preference),
+            ),
             _infoRow(icon: Icons.route, label: 'Rota', value: routeLabel),
             _infoRow(
               icon: Icons.login,
@@ -664,6 +860,11 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               value: '${plan.transferCount}',
             ),
             _infoRow(
+              icon: Icons.directions_walk,
+              label: 'Caminhada',
+              value: _formatDistance(plan.transferWalkingDistanceMeters),
+            ),
+            _infoRow(
               icon: Icons.schedule,
               label: 'Tempo total',
               value: '${plan.estimatedMinutes} min',
@@ -671,6 +872,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             const SizedBox(height: 10),
             ...plan.legs.asMap().entries.expand((entry) {
               final index = entry.key;
+
               final widgets = <Widget>[_buildLegCard(index, entry.value)];
 
               if (index < plan.transfers.length) {
@@ -775,6 +977,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             },
           ),
           const SizedBox(height: 16),
+          _buildPreferenceSelector(),
+          const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _planTrip,
             icon: const Icon(Icons.alt_route),
@@ -800,6 +1004,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               ),
             ),
           ],
+          if (_plans.length > 1) ...[
+            const SizedBox(height: 16),
+            _buildAlternativeSelector(),
+          ],
           if (_plan != null) ...[
             const SizedBox(height: 16),
             _buildPlanCard(_plan!),
@@ -808,12 +1016,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           const Divider(),
           const SizedBox(height: 8),
           const Text(
-            'V1.2 • Baldeação entre linhas',
+            'V1.3 • Rotas inteligentes',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           Text(
-            'O planejador prioriza viagens diretas e, quando necessário, procura uma rota com 1 baldeação entre paradas simuladas próximas, com caminhada de até ${TripPlannerService.maxTransferWalkMeters.round()} m.',
+            'O planejador compara até 3 alternativas simuladas e permite priorizar menor tempo, menor caminhada ou menos baldeações. As viagens continuam limitadas a rota direta ou 1 baldeação.',
             style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
@@ -841,7 +1049,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           if (isDesktop) {
             return Row(
               children: [
-                SizedBox(width: 450, child: _buildPlannerPanel()),
+                SizedBox(width: 470, child: _buildPlannerPanel()),
                 const VerticalDivider(width: 1),
                 Expanded(child: _buildMap()),
               ],
@@ -852,7 +1060,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             children: [
               Expanded(flex: 5, child: _buildMap()),
               const Divider(height: 1),
-              Expanded(flex: 8, child: _buildPlannerPanel()),
+              Expanded(flex: 9, child: _buildPlannerPanel()),
             ],
           );
         },

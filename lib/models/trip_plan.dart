@@ -31,6 +31,20 @@ class TripPlan {
     return legs.fold<int>(0, (total, leg) => total + leg.stopsTraveled);
   }
 
+  double get transferWalkingDistanceMeters {
+    return transfers.fold<double>(
+      0,
+      (total, transfer) => total + transfer.walkingDistanceMeters,
+    );
+  }
+
+  int get transferWalkingMinutes {
+    return transfers.fold<int>(
+      0,
+      (total, transfer) => total + transfer.walkingMinutes,
+    );
+  }
+
   List<LatLng> get routeSegment {
     return [for (final leg in legs) ...leg.routeSegment];
   }

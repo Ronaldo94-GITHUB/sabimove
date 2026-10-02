@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:sabimove/models/trip_preference.dart';
 import 'package:sabimove/services/trip_planner_service.dart';
 
 void main() {
@@ -21,6 +22,7 @@ void main() {
     expect(plan.destination.id, 'L01-P03');
     expect(plan.stopsTraveled, 2);
     expect(plan.estimatedMinutes, 18);
+    expect(plan.transferWalkingDistanceMeters, 0);
   });
 
   test('findDirectPlan continua restrito a viagem direta', () {
@@ -32,29 +34,73 @@ void main() {
     expect(plan, isNull);
   });
 
-  test('planeja uma baldeacao da Linha 01 para a Linha 02', () {
-    final plan = planner.findPlan(
+  test('encontra multiplas alternativas com uma baldeacao', () {
+    final plans = planner.findPlans(
       originStopId: 'L01-P01',
       destinationStopId: 'L02-P03',
+      maxResults: 3,
     );
 
-    expect(plan, isNotNull);
-    expect(plan!.isDirect, isFalse);
-    expect(plan.transferCount, 1);
-    expect(plan.legs, hasLength(2));
-    expect(plan.transfers, hasLength(1));
-    expect(plan.legs.first.line.id, '01');
-    expect(plan.legs.last.line.id, '02');
-    expect(plan.transfers.first.fromStop.id, 'L01-P02');
-    expect(plan.transfers.first.toStop.id, 'L02-P02');
-    expect(
-      plan.transfers.first.walkingDistanceMeters,
-      lessThanOrEqualTo(TripPlannerService.maxTransferWalkMeters),
-    );
-    expect(plan.estimatedMinutes, 28);
+    expect(plans, hasLength(3));
+    expect(plans.every((plan) => plan.transferCount == 1), isTrue);
   });
 
-  test('planeja uma baldeacao da Linha 03 para a Linha 01', () {
+  test('prioridade mais rapida escolhe menor tempo total', () {
+    final plans = planner.findPlans(
+      originStopId: 'L01-P01',
+      destinationStopId: 'L02-P03',
+      preference: TripPreference.fastest,
+      maxResults: 3,
+    );
+
+    expect(plans, isNotEmpty);
+    expect(plans.first.estimatedMinutes, 28);
+    expect(plans.first.transfers.first.fromStop.id, 'L01-P02');
+    expect(plans.first.transfers.first.toStop.id, 'L02-P02');
+  });
+
+  test('prioridade menos caminhada escolhe conexao mais curta', () {
+    final plans = planner.findPlans(
+      originStopId: 'L01-P01',
+      destinationStopId: 'L02-P03',
+      preference: TripPreference.lessWalking,
+      maxResults: 3,
+    );
+
+    expect(plans, isNotEmpty);
+    expect(plans.first.transfers.first.fromStop.id, 'L01-P02');
+    expect(plans.first.transfers.first.toStop.id, 'L02-P01');
+    expect(plans.first.estimatedMinutes, 37);
+    expect(
+      plans.first.transferWalkingDistanceMeters,
+      lessThan(plans[1].transferWalkingDistanceMeters),
+    );
+  });
+
+  test('prioridade menos baldeacoes preserva viagem direta', () {
+    final plans = planner.findPlans(
+      originStopId: 'L01-P01',
+      destinationStopId: 'L01-P03',
+      preference: TripPreference.fewerTransfers,
+      maxResults: 3,
+    );
+
+    expect(plans, hasLength(1));
+    expect(plans.first.transferCount, 0);
+    expect(plans.first.isDirect, isTrue);
+  });
+
+  test('respeita limite de alternativas', () {
+    final plans = planner.findPlans(
+      originStopId: 'L01-P01',
+      destinationStopId: 'L02-P03',
+      maxResults: 2,
+    );
+
+    expect(plans, hasLength(2));
+  });
+
+  test('mantem baldeacao da Linha 03 para a Linha 01', () {
     final plan = planner.findPlan(
       originStopId: 'L03-P01',
       destinationStopId: 'L01-P03',
@@ -82,6 +128,7 @@ void main() {
     const position = LatLng(-22.4710, -48.9940);
 
     final stop = planner.nearestStopTo(position);
+
     final distance = planner.distanceMeters(position, stop.position);
 
     expect(stop.id, 'L01-P01');
