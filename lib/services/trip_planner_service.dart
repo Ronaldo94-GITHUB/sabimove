@@ -1,12 +1,25 @@
+import 'dart:math' as math;
+
 import 'package:latlong2/latlong.dart';
 
 import '../data/mock_lines.dart';
 import '../models/transit_line.dart';
 import '../models/transit_stop.dart';
+import '../models/trip_leg.dart';
 import '../models/trip_plan.dart';
 
 class TripPlannerService {
   const TripPlannerService();
+
+  TripPlan? findPlan({
+    required String originStopId,
+    required String destinationStopId,
+  }) {
+    return findDirectPlan(
+      originStopId: originStopId,
+      destinationStopId: destinationStopId,
+    );
+  }
 
   TripPlan? findDirectPlan({
     required String originStopId,
@@ -45,16 +58,18 @@ class TripPlannerService {
       );
 
       var estimatedMinutes = 1;
+
       if (line.stops.length > 1) {
         const simulatedFullRouteMinutes = 18.0;
         final fraction = stopsTraveled / (line.stops.length - 1);
         estimatedMinutes = (fraction * simulatedFullRouteMinutes).ceil();
+
         if (estimatedMinutes < 1) {
           estimatedMinutes = 1;
         }
       }
 
-      return TripPlan(
+      final leg = TripLeg(
         line: line,
         origin: origin,
         destination: destination,
@@ -62,9 +77,57 @@ class TripPlannerService {
         stopsTraveled: stopsTraveled,
         estimatedMinutes: estimatedMinutes,
       );
+
+      return TripPlan(legs: [leg], estimatedMinutes: estimatedMinutes);
     }
 
     return null;
+  }
+
+  TransitStop nearestStopTo(LatLng position) {
+    final stops = mockLines.expand((line) => line.stops).toList();
+
+    if (stops.isEmpty) {
+      throw StateError('Nenhuma parada cadastrada.');
+    }
+
+    var nearest = stops.first;
+    var nearestDistance = distanceMeters(position, nearest.position);
+
+    for (final stop in stops.skip(1)) {
+      final distance = distanceMeters(position, stop.position);
+
+      if (distance < nearestDistance) {
+        nearest = stop;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  double distanceMeters(LatLng a, LatLng b) {
+    const earthRadiusMeters = 6371000.0;
+
+    final lat1 = _toRadians(a.latitude);
+    final lat2 = _toRadians(b.latitude);
+    final deltaLat = _toRadians(b.latitude - a.latitude);
+    final deltaLon = _toRadians(b.longitude - a.longitude);
+
+    final sinLat = math.sin(deltaLat / 2);
+    final sinLon = math.sin(deltaLon / 2);
+
+    final haversine =
+        (sinLat * sinLat) + math.cos(lat1) * math.cos(lat2) * (sinLon * sinLon);
+
+    final centralAngle =
+        2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
+
+    return earthRadiusMeters * centralAngle;
+  }
+
+  double _toRadians(double degrees) {
+    return degrees * math.pi / 180;
   }
 
   List<LatLng> _routeSegment({

@@ -1226,7 +1226,9 @@ class _MapPageState extends State<MapPage> {
 
   Future<void> _openTripPlanner(BuildContext context) async {
     final selection = await Navigator.of(context).push<TripPlannerSelection>(
-      MaterialPageRoute(builder: (_) => const TripPlannerPage()),
+      MaterialPageRoute(
+        builder: (_) => TripPlannerPage(initialUserPosition: _userPosition),
+      ),
     );
 
     if (!mounted || !context.mounted || selection == null) {

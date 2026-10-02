@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../data/mock_lines.dart';
@@ -15,7 +16,9 @@ class TripPlannerSelection {
 }
 
 class TripPlannerPage extends StatefulWidget {
-  const TripPlannerPage({super.key});
+  final LatLng? initialUserPosition;
+
+  const TripPlannerPage({super.key, this.initialUserPosition});
 
   @override
   State<TripPlannerPage> createState() => _TripPlannerPageState();
@@ -30,6 +33,23 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   String? _destinationStopId;
   TripPlan? _plan;
   String? _message;
+  String? _locationMessage;
+
+  LatLng? _userPosition;
+  double? _accessDistanceMeters;
+  bool _usingMyLocationAsOrigin = false;
+  bool _isLocating = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final initialPosition = widget.initialUserPosition;
+
+    if (initialPosition != null) {
+      _applyUserPosition(initialPosition, updateState: false);
+    }
+  }
 
   List<TransitStop> get _allStops {
     return mockLines.expand((line) => line.stops).toList();
@@ -43,7 +63,118 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         }
       }
     }
+
     return null;
+  }
+
+  TransitStop? _stopById(String stopId) {
+    for (final stop in _allStops) {
+      if (stop.id == stopId) {
+        return stop;
+      }
+    }
+
+    return null;
+  }
+
+  String _formatDistance(double meters) {
+    if (meters < 1000) {
+      return '${meters.round()} m';
+    }
+
+    return '${(meters / 1000).toStringAsFixed(1).replaceAll('.', ',')} km';
+  }
+
+  void _applyUserPosition(LatLng position, {required bool updateState}) {
+    final nearestStop = _planner.nearestStopTo(position);
+    final distance = _planner.distanceMeters(position, nearestStop.position);
+
+    void apply() {
+      _userPosition = position;
+      _originStopId = nearestStop.id;
+      _accessDistanceMeters = distance;
+      _usingMyLocationAsOrigin = true;
+      _plan = null;
+      _message = null;
+      _locationMessage =
+          'Parada mais próxima: ${nearestStop.name} • ${_formatDistance(distance)}.';
+    }
+
+    if (updateState) {
+      setState(apply);
+    } else {
+      apply();
+    }
+  }
+
+  Future<void> _useMyLocation() async {
+    if (_isLocating) {
+      return;
+    }
+
+    setState(() {
+      _isLocating = true;
+      _locationMessage = null;
+    });
+
+    try {
+      var permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _locationMessage = 'Permissão de localização não concedida.';
+        });
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _locationMessage = 'Localização bloqueada. Libere a permissão no navegador ou dispositivo.';
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      _applyUserPosition(
+        LatLng(position.latitude, position.longitude),
+        updateState: true,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _locationMessage = 'Não foi possível obter sua localização. Verifique a permissão do navegador ou dispositivo.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLocating = false;
+        });
+      }
+    }
   }
 
   void _planTrip() {
@@ -58,7 +189,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       return;
     }
 
-    final plan = _planner.findDirectPlan(
+    final plan = _planner.findPlan(
       originStopId: originId,
       destinationStopId: destinationId,
     );
@@ -78,6 +209,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       _destinationStopId = previousOrigin;
       _plan = null;
       _message = null;
+      _usingMyLocationAsOrigin = false;
+      _accessDistanceMeters = null;
     });
   }
 
@@ -89,8 +222,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     );
   }
 
-  Widget _stopMarker({
-    required TransitStop stop,
+  Widget _mapMarker({
     required String label,
     required IconData icon,
     required Color color,
@@ -131,17 +263,22 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
   Widget _buildMap() {
     final plan = _plan;
-    final center = plan == null ? _agudosCenter : _centerForPlan(plan);
+    final userPosition = _userPosition;
+    final originStop = _originStopId == null ? null : _stopById(_originStopId!);
+
+    final center = plan != null
+        ? _centerForPlan(plan)
+        : userPosition ?? _agudosCenter;
 
     return FlutterMap(
       key: ValueKey(
-        plan == null
-            ? 'trip-planner-empty'
-            : '${plan.line.id}-${plan.origin.id}-${plan.destination.id}',
+        plan != null
+            ? '${plan.line.id}-${plan.origin.id}-${plan.destination.id}'
+            : 'trip-planner-${userPosition?.latitude}-${userPosition?.longitude}-${_originStopId ?? 'empty'}',
       ),
       options: MapOptions(
         initialCenter: center,
-        initialZoom: plan == null ? 13.8 : 15,
+        initialZoom: plan != null || userPosition != null ? 15 : 13.8,
       ),
       children: [
         TileLayer(
@@ -159,6 +296,14 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                     : Colors.grey.withValues(alpha: 0.45),
               ),
             ),
+            if (userPosition != null &&
+                originStop != null &&
+                _usingMyLocationAsOrigin)
+              Polyline(
+                points: [userPosition, originStop.position],
+                strokeWidth: 4,
+                color: Colors.green.shade700,
+              ),
             if (plan != null)
               Polyline(
                 points: plan.routeSegment,
@@ -169,13 +314,23 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         ),
         MarkerLayer(
           markers: [
+            if (userPosition != null)
+              Marker(
+                point: userPosition,
+                width: 78,
+                height: 70,
+                child: _mapMarker(
+                  label: 'Você',
+                  icon: Icons.my_location,
+                  color: const Color(0xFF1565C0),
+                ),
+              ),
             if (plan != null)
               Marker(
                 point: plan.origin.position,
                 width: 78,
                 height: 70,
-                child: _stopMarker(
-                  stop: plan.origin,
+                child: _mapMarker(
                   label: 'Embarque',
                   icon: Icons.trip_origin,
                   color: Colors.green.shade700,
@@ -186,8 +341,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 point: plan.destination.position,
                 width: 88,
                 height: 70,
-                child: _stopMarker(
-                  stop: plan.destination,
+                child: _mapMarker(
                   label: 'Desembarque',
                   icon: Icons.flag,
                   color: Colors.red.shade700,
@@ -227,11 +381,76 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       }).toList(),
       onChanged: (newValue) {
         onChanged(newValue);
+
         setState(() {
           _plan = null;
           _message = null;
         });
       },
+    );
+  }
+
+  Widget _buildLocationCard() {
+    final originStop = _originStopId == null ? null : _stopById(_originStopId!);
+
+    return Card(
+      elevation: 0,
+      color: const Color(0xFF1565C0).withValues(alpha: 0.06),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton.tonalIcon(
+              onPressed: _isLocating ? null : _useMyLocation,
+              icon: _isLocating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location),
+              label: Text(
+                _isLocating ? 'Localizando...' : 'Usar minha localização',
+              ),
+            ),
+            if (_locationMessage != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _locationMessage!,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+            if (_usingMyLocationAsOrigin &&
+                originStop != null &&
+                _accessDistanceMeters != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.directions_walk,
+                    size: 19,
+                    color: Color(0xFF1565C0),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Embarque sugerido: ${originStop.name} • ${_formatDistance(_accessDistanceMeters!)} até a parada.',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                'Distância aproximada entre as coordenadas; não representa uma rota de caminhada pelas ruas.',
+                style: TextStyle(fontSize: 10, color: Colors.grey),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -270,6 +489,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               label: 'Desembarque',
               value: plan.destination.name,
             ),
+            if (_usingMyLocationAsOrigin && _accessDistanceMeters != null)
+              _infoRow(
+                icon: Icons.directions_walk,
+                label: 'Até embarque',
+                value: _formatDistance(_accessDistanceMeters!),
+              ),
             _infoRow(
               icon: Icons.pin_drop,
               label: 'Trecho',
@@ -282,7 +507,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'A rota e o tempo são simulados para desenvolvimento.',
+              'A rota e o tempo do ônibus são simulados para desenvolvimento.',
               style: TextStyle(fontSize: 11, color: Colors.grey),
             ),
             const SizedBox(height: 14),
@@ -339,16 +564,21 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Escolha uma parada de origem e uma parada de destino.',
+            'Use sua localização ou escolha manualmente uma parada de origem.',
             style: TextStyle(color: Colors.grey),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          _buildLocationCard(),
+          const SizedBox(height: 16),
           _buildStopDropdown(
             label: 'Origem',
             value: _originStopId,
             icon: Icons.trip_origin,
             onChanged: (value) {
               _originStopId = value;
+              _usingMyLocationAsOrigin = false;
+              _accessDistanceMeters = null;
+              _locationMessage = null;
             },
           ),
           const SizedBox(height: 10),
@@ -402,12 +632,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           const Divider(),
           const SizedBox(height: 8),
           const Text(
-            'V1.0 • Planejador direto',
+            'V1.1 • Origem inteligente',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           const Text(
-            'Nesta versão, o planejador encontra viagens diretas no sentido cadastrado da linha. Integrações e baldeações ficam para uma evolução posterior.',
+            'A viagem continua direta nesta versão. Internamente, o plano agora é formado por trechos (legs), preparando a próxima evolução para baldeações entre linhas.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
@@ -435,7 +665,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           if (isDesktop) {
             return Row(
               children: [
-                SizedBox(width: 410, child: _buildPlannerPanel()),
+                SizedBox(width: 430, child: _buildPlannerPanel()),
                 const VerticalDivider(width: 1),
                 Expanded(child: _buildMap()),
               ],
@@ -446,7 +676,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             children: [
               Expanded(flex: 5, child: _buildMap()),
               const Divider(height: 1),
-              Expanded(flex: 6, child: _buildPlannerPanel()),
+              Expanded(flex: 7, child: _buildPlannerPanel()),
             ],
           );
         },
