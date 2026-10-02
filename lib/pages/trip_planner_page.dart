@@ -15,6 +15,7 @@ import '../models/trip_preference.dart';
 import '../models/trip_transfer.dart';
 import '../services/trip_history_service.dart';
 import '../services/trip_planner_service.dart';
+import 'active_trip_page.dart';
 import 'saved_trips_page.dart';
 
 class TripPlannerSelection {
@@ -387,6 +388,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           ? 'Viagem restaurada de Minhas viagens.'
           : 'A alternativa original mudou; carreguei a opção disponível mais próxima.';
     });
+  }
+
+  Future<void> _startTrip(TripPlan plan) async {
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => ActiveTripPage(plan: plan)));
   }
 
   void _swapStops() {
@@ -992,6 +999,17 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () {
+                  _startTrip(plan);
+                },
+                icon: const Icon(Icons.navigation),
+                label: const Text('Iniciar viagem'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: () {
                   _saveFavorite(plan);
@@ -1128,12 +1146,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           const Divider(),
           const SizedBox(height: 8),
           const Text(
-            'V1.4 • Minhas viagens',
+            'V1.5 • Alertas e acompanhamento',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           const Text(
-            'O histórico registra rotas planejadas localmente. Você pode favoritar uma rota, abrir Minhas viagens e restaurar origem, destino, prioridade e alternativa selecionada.',
+            'Além de Minhas viagens, agora uma rota planejada pode iniciar um acompanhamento guiado com etapas, progresso e alertas simulados de embarque, parada, baldeação e desembarque.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
